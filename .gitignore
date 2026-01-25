@@ -2,3 +2,4 @@ node_modules/
 *.log
 .DS_Store
 behaviors/*/state/data.json
+behaviors/*/plugin/state/data.json

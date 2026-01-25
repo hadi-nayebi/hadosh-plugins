@@ -25,8 +25,8 @@ git pull
 ```
 
 ## Behaviors
-- `behaviors/wm-guard/` — WM.md enforcement, read injection, and repair loop.
+- `behaviors/wm-guard/` — WM.md enforcement, read injection, diagnostics, and repair loop.
 
 ## Notes
-- v1.0 always injects the WM.md chain on reads.
-- v1.1 adds a sleep/debounce ledger in `state/data.json` to reduce repeated chain injections while still validating every read.
+- v1.1 adds a sleep/debounce ledger in `plugin/state/data.json` to reduce repeated chain injections while still validating every read.
+- v1.2 adds external allowlist/read-only roots and telemetry capture in the same state file.

@@ -1,5 +1,5 @@
 ---
-description: Maintains WM enforcement by repairing, auditing, and setting up memory layers
+description: Maintains WorkingMemory (WM) enforcement by repairing, auditing, and setting up memory layers
 mode: subagent
 temperature: 0.2
 permission:

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 - 2026-01-25
+### Added
+- External allowlist and read-only roots for prototype access
+- Telemetry capture for trigger inputs/outputs in `plugin/state/data.json`
+
+### Changed
+- Plugin state moved under `plugin/state` to keep sensor and data colocated
+- README and WM policy updated with new behavior guidance
+
 ## 0.2.0 - 2026-01-24
 ### Added
 - Sleep/debounce state ledger at `behaviors/wm-guard/state/data.json`

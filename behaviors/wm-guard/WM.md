@@ -3,7 +3,7 @@
     Behavior-specific README for wm-guard. It describes the event layer, command and skill cells, and how the organ evolves over time. Update this file whenever the enforcement logic or organ structure changes so readers understand the current behavior. This is the canonical narrative for the organ, so keep it aligned with the plan and plugin.
   </file>
   <subdir path="plugin/">
-    The core enforcement brain for wm-guard. This directory houses the plugin entry point that intercepts tool calls, validates WM.md chains, and injects commentary into reads. Any change here affects runtime enforcement, so update related commands, skills, and documentation whenever you change this code.
+    The core enforcement brain for wm-guard. This directory houses the plugin entry point that intercepts tool calls, validates WM.md chains, and injects commentary into reads. It also contains plugin-local state and telemetry used to track triggers and outputs. Any change here affects runtime enforcement, so update related commands, skills, and documentation whenever you change this code.
   </subdir>
   <subdir path="commands/">
     Procedural memory for wm-guard. These command templates describe repeatable repair and maintenance flows such as wm-init and wm-sync. Keep them aligned with plugin behavior and the WM policy so repairs are consistent and predictable. If you add a new enforcement rule, update or add a command to address it.
@@ -19,8 +19,5 @@
   </subdir>
   <subdir path="examples/">
     Example commentary and sample WM.md files. These are teaching artifacts used to show high-signal directory commentary patterns. Update them as the organ evolves and as you discover better commentary structures. They should remain concise but informative for onboarding.
-  </subdir>
-  <subdir path="state/">
-    Reserved space for organ state. In future releases this will store small state files like a sleep or debounce ledger. Keep this directory empty in v1.0 and document any new state you introduce so behavior remains transparent and debuggable.
   </subdir>
 </directory-commentary>

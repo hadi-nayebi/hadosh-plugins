@@ -48,8 +48,18 @@ wm-guard is an organ made of components that must stay aligned: plugin (enforcem
 - Exceptions must be documented in WM.md and should not become a default escape hatch.
 - If a repeated warning is truly noise, add a justified exception rather than ignoring it silently.
 
+## External Allowlist and Read-Only Roots
+- External directories may be allowlisted in `plugin/state/data.json` under `config.externalAllowRoots`.
+- Allowlisted external roots skip WM.md injection and validation, but still emit WM-STATUS notes to show that a skip occurred.
+- Read-only roots listed in `config.readOnlyRoots` block edits and writes to those paths.
+
+## Telemetry
+- The plugin records trigger input/output summaries in `plugin/state/data.json` under `telemetry`.
+- Telemetry is bounded by `config.telemetryMaxEntries` and can be disabled via `config.telemetryEnabled`.
+- Use telemetry to detect noisy warnings and improve behavior rules over time.
+
 ## Compartment Model
-- Outside: anything outside `./` (blocked).
+- Outside: anything outside `./` (blocked unless allowlisted).
 - Inside: `./` root and normal subdirectories.
 - Brain: `.opencode/`.
 - Side projects: `./<project_name>/` subtrees.

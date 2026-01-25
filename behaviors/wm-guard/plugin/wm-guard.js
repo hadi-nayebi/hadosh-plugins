@@ -6,14 +6,19 @@ const WM_FILE = "WM.md"
 const MIN_WORDS = 50
 const WORD_RE = /\S+/g
 
-const ORGAN_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
-const STATE_PATH = path.join(ORGAN_ROOT, "state", "data.json")
+const PLUGIN_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)))
+const STATE_PATH = path.join(PLUGIN_ROOT, "state", "data.json")
 const DEFAULT_STATE = {
   config: {
     sleepEnabled: true,
     sleepTriggerCount: 10,
+    telemetryEnabled: true,
+    telemetryMaxEntries: 500,
+    externalAllowRoots: [],
+    readOnlyRoots: [],
   },
   sleep: {},
+  telemetry: [],
 }
 
 const callState = new Map()
@@ -65,6 +70,30 @@ const countWords = (value) => {
   return matches ? matches.length : 0
 }
 
+const normalizeRoots = (roots = []) => roots.map((root) => path.resolve(root))
+
+const isUnderRoot = (target, root) => {
+  const rel = path.relative(root, target)
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))
+}
+
+const matchesRoots = (target, roots) => {
+  for (const root of roots) {
+    if (target === root || target.startsWith(`${root}${path.sep}`)) {
+      return true
+    }
+  }
+  return false
+}
+
+const summarizeStatus = (status) => ({
+  missing: status.missing.length,
+  extra: status.extra.length,
+  stale: status.stale.length,
+  over_limit: status.over_limit.length,
+  notes: status.notes.length,
+})
+
 const loadState = async () => {
   if (stateLoaded && stateCache) {
     return stateCache
@@ -89,6 +118,24 @@ const saveState = async (state) => {
   } catch {
     // Ignore state write errors; enforcement should still proceed.
   }
+}
+
+const logTelemetry = async (state, entry) => {
+  const config = state?.config ?? {}
+  if (config.telemetryEnabled === false) {
+    return
+  }
+  const maxEntries = Number.isFinite(config.telemetryMaxEntries)
+    ? Math.max(0, config.telemetryMaxEntries)
+    : 0
+  if (!state.telemetry) {
+    state.telemetry = []
+  }
+  state.telemetry.push(entry)
+  if (maxEntries > 0 && state.telemetry.length > maxEntries) {
+    state.telemetry = state.telemetry.slice(-maxEntries)
+  }
+  await saveState(state)
 }
 
 const createStatus = () => ({
@@ -203,7 +250,15 @@ const listDirectory = async (dirPath) => {
   }
 }
 
-const validateDirectory = async (root, dirPath) => {
+const validateDirectory = async (root, dirPath, options = {}) => {
+  const resolvedDir = path.resolve(dirPath)
+  const allowRoots = normalizeRoots(options.externalAllowRoots)
+  if (!isUnderRoot(resolvedDir, root) && matchesRoots(resolvedDir, allowRoots)) {
+    const status = createStatus()
+    status.notes.push(`external allowlist: ${normalizeRel(root, resolvedDir)}`)
+    return { status, content: null }
+  }
+
   const relDir = normalizeRel(root, dirPath)
   const cacheKey = `${dirPath}:${(await fs.stat(path.join(dirPath, WM_FILE)).catch(() => ({ mtimeMs: 0 }))).mtimeMs}`
   
@@ -406,7 +461,7 @@ const resolveListTargets = async (root, targets) => {
 }
 
 export const WMGuard = async ({ directory, worktree, client }) => {
-  const root = worktree || directory
+  const root = path.resolve(worktree || directory)
 
   return {
     "command.execute.before": async (input) => {
@@ -418,16 +473,57 @@ export const WMGuard = async ({ directory, worktree, client }) => {
       }
     },
     "tool.execute.before": async (input, output) => {
+      if (input.tool === "edit" || input.tool === "write") {
+        const target = output.args?.filePath || output.args?.path
+        if (target) {
+          const resolved = path.isAbsolute(target) ? target : path.join(root, target)
+          const state = await loadState()
+          const config = state?.config ?? {}
+          const readOnlyRoots = normalizeRoots(config.readOnlyRoots)
+          if (matchesRoots(resolved, readOnlyRoots)) {
+            const entry = {
+              ts: Date.now(),
+              tool: input.tool,
+              phase: "before",
+              action: "edit",
+              target: resolved,
+              result: "blocked",
+              reason: "read-only exception",
+            }
+            await logTelemetry(state, entry)
+            throw new Error("WM-GUARD: Read-only exception. Edits are blocked for allowlisted external directories.")
+          }
+        }
+      }
+
       if (input.tool === "bash") {
         const command = String(output.args?.command || "")
         const match = /^\s*(?:git\s+)?(rm|mv)\b/.exec(command)
         if (match) {
           const allowed = allowBashBySession.get(input.sessionID)
           if (!allowed || allowed.expires < Date.now()) {
+            const state = await loadState()
+            await logTelemetry(state, {
+              ts: Date.now(),
+              tool: "bash",
+              phase: "before",
+              action: match[1],
+              result: "blocked",
+              reason: "wrapper required",
+            })
             throw new Error("WM-GUARD: Use /wm-mv or /wm-rm for move/remove operations so WM.md stays in sync.")
           }
           if (allowed.op !== match[1]) {
             allowBashBySession.delete(input.sessionID)
+            const state = await loadState()
+            await logTelemetry(state, {
+              ts: Date.now(),
+              tool: "bash",
+              phase: "before",
+              action: match[1],
+              result: "blocked",
+              reason: "wrapper mismatch",
+            })
             throw new Error("WM-GUARD: Move/remove type does not match the active wrapper command.")
           }
           allowBashBySession.delete(input.sessionID)
@@ -467,16 +563,57 @@ export const WMGuard = async ({ directory, worktree, client }) => {
 
         const resolved = path.isAbsolute(filePath) ? filePath : path.join(root, filePath)
         const isWMRead = path.basename(resolved) === WM_FILE
+        const state = await loadState()
+        const config = state?.config ?? {}
+        const allowRoots = normalizeRoots(config.externalAllowRoots)
+        const isOutside = !isUnderRoot(resolved, root)
+
+        if (isOutside) {
+          if (!matchesRoots(resolved, allowRoots)) {
+            await logTelemetry(state, {
+              ts: Date.now(),
+              tool: "read",
+              phase: "before",
+              action: "read",
+              target: resolved,
+              result: "blocked",
+              reason: "outside root",
+            })
+            throw new Error("WM-GUARD: Read blocked. Target path is outside the project root.")
+          }
+          const status = createStatus()
+          status.notes.push("external allowlist: WM chain skipped")
+          callState.set(input.callID, {
+            tool: "read",
+            chain: [],
+            status,
+            skipLastChain: isWMRead,
+            skipChain: true,
+            targetPath: resolved,
+            external: true,
+          })
+          return
+        }
+
         const targetDir = path.dirname(resolved)
         const chain = buildChain(root, targetDir)
         if (!chain) {
+          await logTelemetry(state, {
+            ts: Date.now(),
+            tool: "read",
+            phase: "before",
+            action: "read",
+            target: resolved,
+            result: "blocked",
+            reason: "chain build failed",
+          })
           throw new Error("WM-GUARD: Read blocked. Target path is outside the project root.")
         }
 
         const status = createStatus()
         const chainContent = []
 
-        const validations = chain.map((dirPath) => validateDirectory(root, dirPath))
+        const validations = chain.map((dirPath) => validateDirectory(root, dirPath, { externalAllowRoots: allowRoots }))
         const results = await Promise.all(validations)
 
         for (let i = 0; i < results.length; i++) {
@@ -490,13 +627,21 @@ export const WMGuard = async ({ directory, worktree, client }) => {
 
         if (hasBlockingIssues(status)) {
           addAction(status, "@wm-steward")
+          await logTelemetry(state, {
+            ts: Date.now(),
+            tool: "read",
+            phase: "before",
+            action: "read",
+            target: resolved,
+            result: "blocked",
+            status: summarizeStatus(status),
+            reason: "wm validation",
+          })
           const message = `WM-GUARD: Read blocked.\n${formatStatus(status)}`
           throw new Error(message)
         }
 
         let skipChain = false
-        const state = await loadState()
-        const config = state?.config ?? {}
         const sleepEnabled = config.sleepEnabled !== false
         const sleepSkips = Number.isFinite(config.sleepTriggerCount)
           ? Math.max(0, config.sleepTriggerCount)
@@ -532,6 +677,8 @@ export const WMGuard = async ({ directory, worktree, client }) => {
           status,
           skipLastChain: isWMRead,
           skipChain,
+          targetPath: resolved,
+          external: false,
         })
         return
       }
@@ -559,34 +706,70 @@ export const WMGuard = async ({ directory, worktree, client }) => {
         const chainText = chainForOutput.length ? `${formatChain(root, chainForOutput)}\n\n` : ""
         const prefix = `${chainText}${formatStatus(state.status)}`
         output.output = `${prefix}\n\n${output.output}`
+        const logState = await loadState()
+        await logTelemetry(logState, {
+          ts: Date.now(),
+          tool: "read",
+          phase: "after",
+          action: "read",
+          target: state.targetPath,
+          result: "allowed",
+          external: state.external,
+          skipChain: state.skipChain,
+          status: summarizeStatus(state.status),
+        })
         callState.delete(input.callID)
         return
       }
 
       if (input.tool === "bash" && state.tool === "bash-ls") {
+        const logState = await loadState()
+        const allowRoots = normalizeRoots(logState?.config?.externalAllowRoots)
         const targets = await resolveListTargets(root, state.paths)
         const status = createStatus()
-        const results = await Promise.all(targets.map((dirPath) => validateDirectory(root, dirPath)))
+        const results = await Promise.all(targets.map((dirPath) => validateDirectory(root, dirPath, { externalAllowRoots: allowRoots })))
         for (const result of results) {
           mergeStatus(status, result.status)
         }
         output.output = `${formatStatus(status)}\n\n${output.output}`
+        await logTelemetry(logState, {
+          ts: Date.now(),
+          tool: "bash",
+          phase: "after",
+          action: "ls",
+          targets,
+          result: "allowed",
+          status: summarizeStatus(status),
+        })
         callState.delete(input.callID)
         return
       }
 
       if (input.tool === "list") {
+        const logState = await loadState()
+        const allowRoots = normalizeRoots(logState?.config?.externalAllowRoots)
         const args = state.args || {}
         const dirPath = path.isAbsolute(args.path || "")
           ? args.path
           : path.join(root, args.path || "")
-        const result = await validateDirectory(root, dirPath)
+        const result = await validateDirectory(root, dirPath, { externalAllowRoots: allowRoots })
         output.output = `${formatStatus(result.status)}\n\n${output.output}`
+        await logTelemetry(logState, {
+          ts: Date.now(),
+          tool: "list",
+          phase: "after",
+          action: "list",
+          target: dirPath,
+          result: "allowed",
+          status: summarizeStatus(result.status),
+        })
         callState.delete(input.callID)
         return
       }
 
       if (input.tool === "glob" || input.tool === "grep") {
+        const logState = await loadState()
+        const allowRoots = normalizeRoots(logState?.config?.externalAllowRoots)
         const mode = input.tool
         const matchedFiles = extractPathsFromOutput(root, output, mode)
         const status = createStatus()
@@ -595,11 +778,20 @@ export const WMGuard = async ({ directory, worktree, client }) => {
         } else {
           const dirs = [...new Set(matchedFiles.map((file) => path.dirname(file)))]
           for (const dirPath of dirs) {
-            const result = await validateDirectory(root, dirPath)
+            const result = await validateDirectory(root, dirPath, { externalAllowRoots: allowRoots })
             mergeStatus(status, result.status)
           }
         }
         output.output = `${formatStatus(status)}\n\n${output.output}`
+        await logTelemetry(logState, {
+          ts: Date.now(),
+          tool: input.tool,
+          phase: "after",
+          action: "search",
+          result: "allowed",
+          matched: matchedFiles.length,
+          status: summarizeStatus(status),
+        })
         callState.delete(input.callID)
         return
       }
