@@ -9,6 +9,7 @@
 - README notes now describe sleep/debounce behavior
 - WM policy clarifies chain skipping while preserving validation
 - State docs updated with `data.json` semantics
+- WM policy expanded with objective, organ model, warnings, and exception guidance
 
 ## 0.1.0 - 2026-01-24
 ### Added

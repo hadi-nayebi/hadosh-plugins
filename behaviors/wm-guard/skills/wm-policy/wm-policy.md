@@ -2,6 +2,12 @@
 
 This document defines the runtime behavior for WM.md enforcement.
 
+## Objective
+Maintain a practical WM.md layer across active work areas so future tasks benefit from accumulated context. The layer should cover inside compartments, the brain (`.opencode/`), and side projects, and it can extend to external locations when work there is active and worth the maintenance effort.
+
+## Organ Model
+wm-guard is an organ made of components that must stay aligned: plugin (enforcement), commands (repair workflows), skills (interpretive guidance), agents (maintenance), and policy/plan (behavior contract). Changes to one component should be reflected in the others.
+
 ## Read Behavior
 - Every `read` is intercepted by the `wm-guard` plugin and prepended with the WM.md chain from `./WM.md` to the target directory WM.md.
 - The chain may be skipped for subsequent reads in the same directory when sleep/debounce is enabled; validation still runs and reads still block if the WM layer is stale.
@@ -17,6 +23,11 @@ This document defines the runtime behavior for WM.md enforcement.
 - `list` (if available), `glob`, `grep`, and `bash ls` do not append WM.md chains.
 - They emit WM-STATUS warnings to surface discrepancies.
 
+## Warnings and Blocks
+- Warnings apply pressure to maintain the WM layer without halting work.
+- Blocks enforce invariants that keep the WM layer useful and consistent.
+- As WM.md coverage improves, warnings naturally decline and the system becomes low friction.
+
 ## Repair Workflow
 - On a blocked read: run `/wm-init <dir>` if WM.md is missing, otherwise `/wm-sync <dir>`, then retry the read.
 - After any edit/write: run `/wm-sync <dir>` for the affected directory.
@@ -31,6 +42,11 @@ This document defines the runtime behavior for WM.md enforcement.
 - Each `<file>` and `<subdir>` entry must contain 50+ words.
 - Do not create entries for `WM.md` itself.
 - Use `<exception>` or `<note type="reorg">` when >10 items exist.
+
+## Exceptions and Noise Control
+- Use exceptions sparingly for low-value directories that do not warrant WM.md coverage.
+- Exceptions must be documented in WM.md and should not become a default escape hatch.
+- If a repeated warning is truly noise, add a justified exception rather than ignoring it silently.
 
 ## Compartment Model
 - Outside: anything outside `./` (blocked).
