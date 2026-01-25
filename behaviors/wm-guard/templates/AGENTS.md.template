@@ -1,0 +1,23 @@
+# WM Policy (Project-Level)
+
+This project enforces a WM.md chain for memory and context.
+
+## Core Rules
+- Use the built-in `read` tool only; plugin injects WM.md chain on every read.
+- If a read is blocked, immediately run `/wm-init` or `/wm-sync` and retry.
+- WM.md must include `<directory-commentary>` with `<file>` and `<subdir>` entries; each entry is 50+ words.
+- Do not add entries for `WM.md` itself.
+- Directory listings and searches are diagnostics and emit WM-STATUS only.
+
+## Organization Constraints
+- No directory should exceed 10 items without `<exception>` or `<note type="reorg">`.
+
+## Compartment Model
+- Outside: paths outside `./` (blocked by default).
+- Inside: `./` root and normal subdirectories.
+- Brain: `.opencode/`.
+- Side projects: `./<project_name>/` treated as normal subtrees.
+
+## Repair Loop
+- On any WM-STATUS warning, run `/wm-sync <dir>` for the affected directory.
+- For onboarding or drift correction, run `/wm-setup` or invoke `@wm-steward`.
