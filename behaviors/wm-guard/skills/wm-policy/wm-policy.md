@@ -4,6 +4,7 @@ This document defines the runtime behavior for WM.md enforcement.
 
 ## Read Behavior
 - Every `read` is intercepted by the `wm-guard` plugin and prepended with the WM.md chain from `./WM.md` to the target directory WM.md.
+- The chain may be skipped for subsequent reads in the same directory when sleep/debounce is enabled; validation still runs and reads still block if the WM layer is stale.
 - Reads are blocked if:
   - Any WM.md in the chain is missing.
   - `<directory-commentary>` is missing.

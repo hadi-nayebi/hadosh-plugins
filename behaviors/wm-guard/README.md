@@ -16,13 +16,13 @@ wm-guard is a standalone OpenCode behavior organ that enforces the WM.md memory 
 - `agents/memory_management/wm-steward/`: repair and audit subagent.
 - `templates/`: project bootstrap templates.
 - `examples/`: examples of high-signal WM commentary.
-- `state/`: reserved for future state (sleep/debounce).
+- `state/`: runtime state (sleep/debounce ledger).
 
 ## Self-improvement loop
 - The steward agent proposes and applies incremental fixes.
 - Plan and README are updated with every behavior change.
 - Drift checks are performed using the `wm-audit` skill.
 
-## Planned evolution
-- v1.1: directory-level sleep/debounce in `state/data.json`.
-- v1.2: configurable sleep thresholds and counters for tuning.
+## Evolution
+- v1.1 (implemented): directory-level sleep/debounce in `state/data.json`. First read includes WM.md chain; subsequent reads in the same directory can skip chain injection while validation still runs.
+- v1.2 (planned): configurable sleep thresholds and counters for tuning.

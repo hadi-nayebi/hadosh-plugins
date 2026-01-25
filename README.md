@@ -29,4 +29,4 @@ git pull
 
 ## Notes
 - v1.0 always injects the WM.md chain on reads.
-- v1.1 (planned) introduces a per-directory sleep/debounce state to reduce repeated chain injection.
+- v1.1 adds a sleep/debounce ledger in `state/data.json` to reduce repeated chain injections while still validating every read.

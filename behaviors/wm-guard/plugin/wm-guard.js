@@ -1,14 +1,27 @@
 import path from "node:path"
 import { promises as fs } from "node:fs"
+import { fileURLToPath } from "node:url"
 
 const WM_FILE = "WM.md"
 const MIN_WORDS = 50
 const WORD_RE = /\S+/g
 
+const ORGAN_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+const STATE_PATH = path.join(ORGAN_ROOT, "state", "data.json")
+const DEFAULT_STATE = {
+  config: {
+    sleepEnabled: true,
+    sleepTriggerCount: 10,
+  },
+  sleep: {},
+}
+
 const callState = new Map()
 const allowBashBySession = new Map()
 const validationCache = new Map()
 const CACHE_TTL = 5000 // 5 seconds
+let stateCache = null
+let stateLoaded = false
 
 // Clean up expired session allowances every minute
 setInterval(() => {
@@ -50,6 +63,32 @@ const countWords = (value) => {
   }
   const matches = value.match(WORD_RE)
   return matches ? matches.length : 0
+}
+
+const loadState = async () => {
+  if (stateLoaded && stateCache) {
+    return stateCache
+  }
+
+  try {
+    const raw = await fs.readFile(STATE_PATH, "utf8")
+    stateCache = JSON.parse(raw)
+  } catch {
+    stateCache = JSON.parse(JSON.stringify(DEFAULT_STATE))
+    await saveState(stateCache)
+  }
+
+  stateLoaded = true
+  return stateCache
+}
+
+const saveState = async (state) => {
+  try {
+    await fs.mkdir(path.dirname(STATE_PATH), { recursive: true })
+    await fs.writeFile(STATE_PATH, `${JSON.stringify(state, null, 2)}\n`)
+  } catch {
+    // Ignore state write errors; enforcement should still proceed.
+  }
 }
 
 const createStatus = () => ({
@@ -455,11 +494,44 @@ export const WMGuard = async ({ directory, worktree, client }) => {
           throw new Error(message)
         }
 
+        let skipChain = false
+        const state = await loadState()
+        const config = state?.config ?? {}
+        const sleepEnabled = config.sleepEnabled !== false
+        const sleepSkips = Number.isFinite(config.sleepTriggerCount)
+          ? Math.max(0, config.sleepTriggerCount)
+          : 0
+
+        if (sleepEnabled && sleepSkips > 0) {
+          const key = path.normalize(targetDir)
+          const entry = state.sleep?.[key] ?? {
+            remainingSkips: 0,
+            lastRead: 0,
+            totalTriggers: 0,
+          }
+
+          if (entry.remainingSkips > 0) {
+            skipChain = true
+            entry.remainingSkips -= 1
+          } else {
+            entry.remainingSkips = sleepSkips
+            entry.totalTriggers = (entry.totalTriggers || 0) + 1
+          }
+
+          entry.lastRead = Date.now()
+          if (!state.sleep) {
+            state.sleep = {}
+          }
+          state.sleep[key] = entry
+          await saveState(state)
+        }
+
         callState.set(input.callID, {
           tool: "read",
           chain: chainContent,
           status,
           skipLastChain: isWMRead,
+          skipChain,
         })
         return
       }
@@ -478,7 +550,12 @@ export const WMGuard = async ({ directory, worktree, client }) => {
       }
 
       if (input.tool === "read" && state.tool === "read") {
-        const chainForOutput = state.skipLastChain ? state.chain.slice(0, -1) : state.chain
+        const shouldIncludeChain = !state.skipChain
+        const chainForOutput = shouldIncludeChain
+          ? state.skipLastChain
+            ? state.chain.slice(0, -1)
+            : state.chain
+          : []
         const chainText = chainForOutput.length ? `${formatChain(root, chainForOutput)}\n\n` : ""
         const prefix = `${chainText}${formatStatus(state.status)}`
         output.output = `${prefix}\n\n${output.output}`
